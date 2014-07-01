@@ -32,8 +32,16 @@
 
 #include <gc/gc.h>
 
+// Allocation of memory which may contain pointers. The returned contents must
+// be nulled (like calloc).
 #define PVEC_MALLOC GC_MALLOC
+
+// Reallocation of memory, which may contain pointers. If the allocation is
+// widened, the extra memory must be nulled (like calloc).
 #define PVEC_REALLOC GC_REALLOC
+
+// Allocation of memory which will never contain pointers. The returned contents
+// must be nulled (like calloc).
 #define PVEC_MALLOC_ATOMIC GC_MALLOC_ATOMIC
 
 #endif
