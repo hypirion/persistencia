@@ -27,19 +27,20 @@
 #include <stdint.h>
 
 #ifndef PVEC_BITS
-// PVEC_BITS is the total amount of bits used per node in the trie.
-#define PVEC_BITS 5
+// PVEC_BITS is b, the total amount of bits used per node in the trie.
+#define PVEC_BITS 2
 
-// PVEC_MAX_HEIGHT is the maximal height of a trie. With 32 bits, we can at most
-// have 2**32 - 1 elements, which is equal to 7 levels.
-#define PVEC_MAX_HEIGHT 7
+// PVEC_MAX_HEIGHT is the maximal height of a trie. With 32 bits and b = 5, we
+// can at most have 2**32 - 1 elements, which is equal to 7 levels. However, for
+// illustration purposes, we use b = 2, meaning we can have at most 16 levels.
+#define PVEC_MAX_HEIGHT 16
 #endif
 
-// PVEC_BRANCHING is the branching factor. With x bits, we have 2**x elements in
+// PVEC_BRANCHING is the branching factor. With n bits, we have 2**n elements in
 // each trie node.
 #define PVEC_BRANCHING (1 << PVEC_BITS)
 
-// PVEC_MASK is the mask used to efficiently perform modulo.
+// PVEC_MASK is the mask used to efficiently perform modulo for bitwise vectors.
 #define PVEC_MASK (PVEC_BRANCHING - 1)
 
 // An opaque persistent vector struct.
