@@ -76,6 +76,10 @@ const Pvec* pvec_right_slice(const Pvec *pvec, uint32_t new_size);
 // const Pvec* pvec_concat(const Pvec *left, const Pvec *right);
 // const Pvec* pvec_slice(const Pvec *pvec, uint32_t from, uint32_t to);
 
+// Functions for printing persistent vectors
+void pvec_to_dot(Pvec *vec, char *loch);
+void pvecs_to_dot(Pvec **vec, int n, char *loch);
+
 #ifdef TRANSIENT_PVEC
 
 typedef struct _TransientPvec TransientPvec;

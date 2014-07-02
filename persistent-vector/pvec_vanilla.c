@@ -220,3 +220,193 @@ static inline Pvec* pvec_clone(const Pvec *pvec) {
   memcpy(clone, pvec, sizeof(Pvec));
   return clone;
 }
+
+// Persistent vector dot printing functions. Some are internal, others are
+// external. See pvec.h for those who are external.
+
+// Not needed to understand the persistent vector, but may be handy to print
+// them out in dot format.
+
+static void pvec_to_dot_rec(FILE *out, Node *root, uint32_t shift, uint32_t size) {
+  fprintf(out,
+          "  s%p [label=<\n<table border=\"0\" cellborder=\"1\" "
+          "cellspacing=\"0\" cellpadding=\"6\" align=\"center\" port=\"body\">\n"
+          "  <tr>\n", root);
+  if (shift == 0) {
+    uint32_t i;
+    for (i = 0; i < size; i++) {
+      uintptr_t leaf = (uintptr_t) ((void **) root->child)[i];
+      fprintf(out,
+              "    <td height=\"36\" width=\"25\">%lx</td>\n",
+              leaf);
+    }
+    while (i < PVEC_BRANCHING) {
+      fprintf(out, "    <td height=\"36\" width=\"25\"></td>\n");
+      i++;
+    }
+    fprintf(out,
+            "  </tr>\n"
+            "</table>>];\n");
+  } else {
+    for (uint32_t i = 0; i < PVEC_BRANCHING; i++) {
+      fprintf(out,
+              "    <td height=\"36\" width=\"25\" port=\"%u\"></td>\n",
+              i);
+    }
+    fprintf(out,
+            "  </tr>\n"
+            "</table>>];\n");
+    uint32_t child_size = (1 << shift);
+    uint32_t i = 0;
+    while (size > child_size) {
+      size -= child_size;
+      fprintf(out, "  s%p:%u -> s%p:body;\n", root, i, root->child[i]);
+      pvec_to_dot_rec(out, root->child[i], shift - PVEC_BITS, child_size);
+      i++;
+    }
+    if (size > 0) {
+      child_size = size;
+      fprintf(out, "  s%p:%u -> s%p:body;\n", root, i, root->child[i]);
+      pvec_to_dot_rec(out, root->child[i], shift - PVEC_BITS, child_size);
+    }
+  }
+}
+
+void pvec_to_dot(Pvec *vec, char *loch) {
+  FILE *out = fopen(loch, "w");
+  fprintf(out, "digraph g {\n  bgcolor=transparent\n  node [shape=none];\n");
+  fprintf(out,
+          "  s%p [label=<\n<table border=\"0\" cellborder=\"1\" "
+          "cellspacing=\"0\" cellpadding=\"6\" align=\"center\" port=\"body\">\n"
+          "  <tr>\n"
+          "    <td height=\"36\" width=\"25\">%d</td>\n"
+          "    <td height=\"36\" width=\"25\">%d</td>\n"
+          "    <td height=\"36\" width=\"25\" port=\"root\"></td>\n"
+          "  </tr>\n"
+          "</table>>];\n",
+          vec, pvec_count(vec), vec->shift);
+  fprintf(out, "  s%p:root -> s%p:body;\n", vec, vec->root);
+  pvec_to_dot_rec(out, vec->root, vec->shift, pvec_count(vec));
+  fprintf(out, "}\n");
+  fclose(out);
+}
+
+typedef struct {
+  unsigned int size;
+  unsigned int cap;
+  void **ptrs;
+} ArraySet;
+
+static int arr_member(ArraySet *aref, void *elt) {
+  for (unsigned int i = 0; i < aref->size; i++) {
+    if (elt == aref->ptrs[i]){
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void arr_insert(ArraySet *aref, void *elt) {
+  if (aref->size == aref->cap) {
+    aref->cap <<= 1;
+    aref->ptrs = (void **) PVEC_REALLOC(aref->ptrs, sizeof(void *) * aref->cap);
+  }
+  aref->ptrs[aref->size] = elt;
+  aref->size++;
+}
+
+static ArraySet *arr_create() {
+  ArraySet *aref = (ArraySet *) PVEC_MALLOC(sizeof(ArraySet));
+  aref->size = 0;
+  aref->cap = 32; // Arbitrary value
+  aref->ptrs = (void **) PVEC_MALLOC(sizeof(void *) * aref->cap);
+  return aref;
+}
+
+static const int colour_size = 5;
+static char *colours[5] =
+  {"burlywood3", "cadetblue3", "darkolivegreen3", "gold3", "pink3"};
+
+static void node_to_dot_rec(FILE* out, char *colour, Node *root, uint32_t shift,
+                            uint32_t size, ArraySet *aref) {
+  if (arr_member(aref, (void *) root)) {
+    return;
+  }
+  else {
+    arr_insert(aref, (void *) root);
+  }
+  fprintf(out,
+          "  s%p [color=%s, label=<\n<table border=\"0\" cellborder=\"1\" "
+          "cellspacing=\"0\" cellpadding=\"6\" align=\"center\" port=\"body\">\n"
+          "  <tr>\n",
+          root, colour);
+  if (shift == 0) {
+    uint32_t i;
+    for (i = 0; i < size; i++) {
+      uintptr_t leaf = (uintptr_t) ((void **)root->child)[i];
+      fprintf(out, "    <td height=\"36\" width=\"25\">%lx</td>\n", leaf);
+    }
+    while (i < PVEC_BRANCHING) {
+      fprintf(out, "    <td height=\"36\" width=\"25\"></td>\n");
+      i++;
+    }
+    fprintf(out,
+            "  </tr>\n"
+            "</table>>];\n");
+  } else {
+    for (uint32_t i = 0; i < PVEC_BRANCHING; i++) {
+      fprintf(out,
+              "    <td height=\"36\" width=\"25\" port=\"%u\"></td>\n",
+              i);
+    }
+    fprintf(out,
+            "  </tr>\n"
+            "</table>>];\n");
+    uint32_t child_size = (1 << shift);
+    uint32_t i = 0;
+    while (size > child_size) {
+      size -= child_size;
+      fprintf(out, "  s%p:%u -> s%p:body [color=%s];\n", root, i, root->child[i],
+              colour);
+      node_to_dot_rec(out, colour, root->child[i], shift - PVEC_BITS,
+                      child_size, aref);
+      i++;
+    }
+    if (size > 0) {
+      child_size = size;
+      fprintf(out, "  s%p:%u -> s%p:body [color=%s];\n", root, i, root->child[i],
+              colour);
+      node_to_dot_rec(out, colour, root->child[i], shift - PVEC_BITS,
+                      child_size, aref);
+    }
+  }
+}
+
+static void pvecs_to_dot_rec(FILE* out, Pvec *vec, char *colour, ArraySet *aref) {
+  fprintf(out,
+          "  s%p [color=%s, label=<\n<table border=\"0\" cellborder=\"1\" "
+          "cellspacing=\"0\" cellpadding=\"6\" align=\"center\" port=\"body\">\n"
+          "  <tr>\n"
+          "    <td height=\"36\" width=\"25\">%d</td>\n"
+          "    <td height=\"36\" width=\"25\">%d</td>\n"
+          "    <td height=\"36\" width=\"25\" port=\"root\"></td>\n"
+          "  </tr>\n"
+          "</table>>];\n",
+          vec, colour, pvec_count(vec), vec->shift);
+  fprintf(out, "  s%p:root -> s%p:body [color=%s];\n", vec, vec->root, colour);
+  node_to_dot_rec(out, colour, vec->root, vec->shift, pvec_count(vec), aref);
+}
+
+void pvecs_to_dot(Pvec **vec, int n, char *loch) {
+  ArraySet *aref = arr_create();
+
+  FILE *out = fopen(loch, "w");
+  fprintf(out, "digraph g {\n  bgcolor=transparent\n  node [shape=none];\n");
+
+  for (int i = 0; i < n; i++) {
+    pvecs_to_dot_rec(out, vec[i], colours[i % colour_size], aref);
+  }
+
+  fprintf(out, "}\n");
+  fclose(out);
+}
