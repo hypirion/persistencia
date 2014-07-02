@@ -115,7 +115,7 @@ const Pvec* pvec_push(const Pvec *restrict pvec, const void *restrict elt) {
     clone->root = node_clone(pvec->root);
   }
   Node *node = clone->root;
-  for (uint32_t s = pvec->shift; s > 0; s -= PVEC_BITS) {
+  for (uint32_t s = clone->shift; s > 0; s -= PVEC_BITS) {
     int subindex = (index >> s) & PVEC_MASK;
     if (node->child[subindex] == NULL) { // the create part of clone-or-create
       node->child[subindex] = node_create();
@@ -134,9 +134,7 @@ const Pvec* pvec_pop(const Pvec *pvec) {
   Pvec *clone = pvec_clone(pvec);
   uint32_t index = pvec_count(pvec) - 1;
   clone->size = pvec_count(pvec) - 1;
-  // For bitwise tricks, we don't need to check that the new size != 1. M << 0
-  // is M, so no problem.
-  if (pvec_count(clone) == (PVEC_BRANCHING << pvec->shift)) {
+  if (pvec_count(clone) == (1 << pvec->shift) && pvec_count(clone) != 1) {
     clone->shift = pvec->shift - PVEC_BITS;
     clone->root = pvec->root->child[0];
     return clone;
