@@ -410,3 +410,28 @@ void pvecs_to_dot(Pvec **vec, int n, char *loch) {
   fprintf(out, "}\n");
   fclose(out);
 }
+
+int main() {
+  const Pvec *p = pvec_create();
+  for (uintptr_t i = 0; i < 100; i++) {
+    p = pvec_push(p, (void *) (i + 1));
+    int ok = 1;
+    for (uint32_t j = 0; j <= i; j++) {
+      uintptr_t n = (uintptr_t) pvec_nth(p, j);
+      if (n != j + 1) {
+        ok = 0;
+      }
+    }
+    if (!ok) {
+      printf("For %lu, not ok\n", i);
+    }
+  }
+  for (uint32_t i = 0; i < 17; i++) {
+    const Pvec *q = pvec_right_slice(p, i);
+    char str[80];
+    sprintf(str, "vanilla-%u.dot", i);
+    pvec_to_dot(q, str);
+  }
+  Pvec *multi[2] = {pvec_right_slice(p, 4), pvec_right_slice(p, 16)};
+  pvecs_to_dot(&multi, 2, "vanilla-multi.dot");
+}
