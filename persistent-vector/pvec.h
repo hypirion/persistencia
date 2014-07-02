@@ -70,7 +70,7 @@ const Pvec* pvec_update(const Pvec *restrict pvec, uint32_t index, const void *r
 
 // pvec_right_slice returns a new persistent vector with the new given size. The
 // new size should be less than or equal the current size.
-const Pvec* pvec_right_slice(const Pvec pvec, uint32_t new_size);
+const Pvec* pvec_right_slice(const Pvec *pvec, uint32_t new_size);
 
 // const Pvec* pvec_concat(const Pvec *left, const Pvec *right);
 // const Pvec* pvec_slice(const Pvec *pvec, uint32_t from, uint32_t to);

@@ -48,15 +48,14 @@ struct _Pvec {
   Node* root;
 };
 
-// The empty node.
 static Node EMPTY_NODE = {.child = {0}};
 
-// An empty vector.
+// An empty vector. (Not necessarily the only empty vector!)
 static Pvec EMPTY_VECTOR = {.size = 0, .shift = 0, .root = &EMPTY_NODE};
 
 // These are just prototypes -- no need to worry about these.
 static inline Node *node_create(void);
-static inline Node *node_clone(void);
+static inline Node *node_clone(const Node* node);
 static inline Pvec* pvec_clone(const Pvec *pvec);
 
 // pvec_create just returns the empty vector.
@@ -78,6 +77,10 @@ void* pvec_nth(const Pvec *pvec, uint32_t index) {
   // This last call is here because unsigned integers cannot be negative, thus
   // `s >= 0` will always be true.
   return (void *) node->child[index & PVEC_MASK];
+}
+
+void* pvec_peek(const Pvec *pvec) {
+  return pvec_nth(pvec, pvec_count(pvec) - 1);
 }
 
 const Pvec* pvec_update(const Pvec *restrict pvec, uint32_t index,
@@ -102,7 +105,7 @@ const Pvec* pvec_push(const Pvec *restrict pvec, const void *restrict elt) {
   uint32_t index = pvec_count(pvec);
   clone->size = pvec->size + 1;
   // this is the d_full(P) check for bit vectors
-  if (pvec_count(pvec) == (M << pvec->shift)) {
+  if (pvec_count(pvec) == (PVEC_BRANCHING << pvec->shift)) {
     Node *new_root = node_create();
     new_root->child[0] = pvec->root;
     clone->root = new_root;
@@ -133,7 +136,7 @@ const Pvec* pvec_pop(const Pvec *pvec) {
   clone->size = pvec_count(pvec) - 1;
   // For bitwise tricks, we don't need to check that the new size != 1. M << 0
   // is M, so no problem.
-  if (pvec_count(clone) == (M << pvec->shift)) {
+  if (pvec_count(clone) == (PVEC_BRANCHING << pvec->shift)) {
     clone->shift = pvec->shift - PVEC_BITS;
     clone->root = pvec->root->child[0];
     return clone;
@@ -143,7 +146,7 @@ const Pvec* pvec_pop(const Pvec *pvec) {
     clone->root = node;
     for (uint32_t s = pvec->shift; s > 0; s -= PVEC_BITS) {
       int subindex = (index >> s) & PVEC_MASK;
-      if (index & (((2*PVEC_BITS) << s) - 1) == 0) {
+      if ((index & (((2*PVEC_BITS) << s) - 1)) == 0) {
         node->child[subindex] = NULL;
         return clone;
       }
@@ -154,4 +157,59 @@ const Pvec* pvec_pop(const Pvec *pvec) {
     }
     return clone;
   }
+}
+
+// Performing a right slice on a persistent vector. Implemented in Scala (with
+// displays), but not in Clojure.
+const Pvec* pvec_right_slice(const Pvec *pvec, uint32_t new_size){
+  Pvec *clone = pvec_clone(pvec);
+  uint32_t index = new_size;
+  clone->size = new_size;
+
+  // We have to cut the tree until the height is minimal
+  while (pvec_count(clone) <= (PVEC_BRANCHING << pvec->shift)) {
+    clone->shift = clone->shift - PVEC_BITS;
+    clone->root = clone->root->child[0];
+  }
+  
+  // Notice that this part is almost exactly the same as the `else` part within
+  // the pvec_pop function. The only difference is the memset functions to
+  // ensure that all elements right of the trie to walk is nilled through
+  // the memset function.
+  Node *node = node_clone(pvec->root);
+  clone->root = node;
+  for (uint32_t s = pvec->shift; s > 0; s -= PVEC_BITS) {
+    int subindex = (index >> s) & PVEC_MASK;
+    if ((index & (((2*PVEC_BITS) << s) - 1)) == 0) {
+      memset(&node->child[subindex], 0,
+             (PVEC_BRANCHING - subindex) * sizeof(Node *));
+      return clone;
+    }
+    else {
+      node->child[subindex] = node_clone(node->child[subindex]);
+      memset(&node->child[subindex + 1], 0,
+           (PVEC_BRANCHING - subindex - 1) * sizeof(Node *));
+      node = node->child[subindex];
+    }
+  }
+  return clone;
+}
+
+// Inline helper functions
+
+static inline Node *node_create(void) {
+  Node *new = PVEC_MALLOC(sizeof(Node));
+  return new;
+}
+
+static inline Node *node_clone(const Node* node) {
+  Node *clone = PVEC_MALLOC(sizeof(Node));
+  memcpy(clone, node, sizeof(Node));
+  return clone;
+}
+
+static inline Pvec* pvec_clone(const Pvec *pvec) {
+  Pvec *clone = PVEC_MALLOC(sizeof(Pvec));
+  memcpy(clone, pvec, sizeof(Pvec));
+  return clone;
 }
