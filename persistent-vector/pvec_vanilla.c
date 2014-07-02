@@ -71,7 +71,7 @@ uint32_t pvec_count(const Pvec *pvec) {
 void* pvec_nth(const Pvec *pvec, uint32_t index) {
   Node *node = pvec->root;
   for (uint32_t s = pvec->shift; s > 0; s -= PVEC_BITS) {
-    int subindex = (index >> s) & PVEC_MASK;
+    uint32_t subindex = (index >> s) & PVEC_MASK;
     node = node->child[subindex];
   }
   // This last call is here because unsigned integers cannot be negative, thus
@@ -89,11 +89,11 @@ const Pvec* pvec_update(const Pvec *restrict pvec, uint32_t index,
   Node *node = node_clone(pvec->root);
   clone->root = node;
   for (uint32_t s = pvec->shift; s > 0; s -= PVEC_BITS) {
-    int subindex = (index >> s) & PVEC_MASK;
+    uint32_t subindex = (index >> s) & PVEC_MASK;
     node->child[subindex] = node_clone(node->child[subindex]);
     node = node->child[subindex];
   }
-  int subindex = index & PVEC_MASK;
+  uint32_t subindex = index & PVEC_MASK;
   node->child[subindex] = (Node *) elt;
   return (const Pvec*) clone;
 }
@@ -116,7 +116,7 @@ const Pvec* pvec_push(const Pvec *restrict pvec, const void *restrict elt) {
   }
   Node *node = clone->root;
   for (uint32_t s = clone->shift; s > 0; s -= PVEC_BITS) {
-    int subindex = (index >> s) & PVEC_MASK;
+    uint32_t subindex = (index >> s) & PVEC_MASK;
     if (node->child[subindex] == NULL) { // the create part of clone-or-create
       node->child[subindex] = node_create();
     }
@@ -125,7 +125,7 @@ const Pvec* pvec_push(const Pvec *restrict pvec, const void *restrict elt) {
     }
     node = node->child[subindex];
   }
-  int subindex = index & PVEC_MASK;
+  uint32_t subindex = index & PVEC_MASK;
   node->child[subindex] = (Node *) elt;
   return (const Pvec*) clone;
 }
@@ -134,7 +134,7 @@ const Pvec* pvec_pop(const Pvec *pvec) {
   Pvec *clone = pvec_clone(pvec);
   uint32_t index = pvec_count(pvec) - 1;
   clone->size = pvec_count(pvec) - 1;
-  if (pvec_count(clone) == (1 << pvec->shift) && pvec_count(clone) != 1) {
+  if (pvec_count(clone) == (1 << pvec->shift) && pvec->shift > 0) {
     clone->shift = pvec->shift - PVEC_BITS;
     clone->root = pvec->root->child[0];
     return clone;
@@ -143,7 +143,7 @@ const Pvec* pvec_pop(const Pvec *pvec) {
     Node *node = node_clone(pvec->root);
     clone->root = node;
     for (uint32_t s = pvec->shift; s > 0; s -= PVEC_BITS) {
-      int subindex = (index >> s) & PVEC_MASK;
+      uint32_t subindex = (index >> s) & PVEC_MASK;
       if ((index & (((2*PVEC_BITS) << s) - 1)) == 0) {
         node->child[subindex] = NULL;
         return clone;
@@ -153,6 +153,7 @@ const Pvec* pvec_pop(const Pvec *pvec) {
         node = node->child[subindex];
       }
     }
+    node->child[index & PVEC_MASK] = NULL;
     return clone;
   }
 }
@@ -165,19 +166,24 @@ const Pvec* pvec_right_slice(const Pvec *pvec, uint32_t new_size){
   clone->size = new_size;
 
   // We have to cut the tree until the height is minimal
-  while (pvec_count(clone) <= (PVEC_BRANCHING << pvec->shift)) {
+  while (pvec_count(clone) <= (1 << clone->shift) && clone->shift > 0) {
     clone->shift = clone->shift - PVEC_BITS;
     clone->root = clone->root->child[0];
+  }
+
+  // The tree being fully dense is a special case, and is short-circuited
+  if (pvec_count(clone) == (PVEC_BRANCHING << clone->shift)) {
+    return clone;
   }
   
   // Notice that this part is almost exactly the same as the `else` part within
   // the pvec_pop function. The only difference is the memset functions to
   // ensure that all elements right of the trie to walk is nilled through
   // the memset function.
-  Node *node = node_clone(pvec->root);
+  Node *node = node_clone(clone->root);
   clone->root = node;
-  for (uint32_t s = pvec->shift; s > 0; s -= PVEC_BITS) {
-    int subindex = (index >> s) & PVEC_MASK;
+  for (uint32_t s = clone->shift; s > 0; s -= PVEC_BITS) {
+    uint32_t subindex = (index >> s) & PVEC_MASK;
     if ((index & (((2*PVEC_BITS) << s) - 1)) == 0) {
       memset(&node->child[subindex], 0,
              (PVEC_BRANCHING - subindex) * sizeof(Node *));
@@ -186,10 +192,13 @@ const Pvec* pvec_right_slice(const Pvec *pvec, uint32_t new_size){
     else {
       node->child[subindex] = node_clone(node->child[subindex]);
       memset(&node->child[subindex + 1], 0,
-           (PVEC_BRANCHING - subindex - 1) * sizeof(Node *));
+             (PVEC_BRANCHING - (subindex - 1)) * sizeof(Node *));
       node = node->child[subindex];
     }
   }
+  uint32_t subindex = index & PVEC_MASK;
+  memset(&node->child[subindex + 1], 0,
+         (PVEC_BRANCHING - (subindex - 1)) * sizeof(Node *));
   return clone;
 }
 
